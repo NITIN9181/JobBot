@@ -1,0 +1,49 @@
+# ==========================================
+# JobBot Configuration File
+# ==========================================
+
+# List of job titles you want to search for
+# Example: ["Python Developer", "Data Scientist"]
+search_terms: 
+  - "Python Developer"
+  - "Backend Engineer"
+
+# List of skills that must be present in labels/description
+# Example: ["python", "aws", "docker"]
+skills:
+  - "python"
+  - "django"
+  - "sql"
+
+# Minimum annual salary you are looking for
+min_salary: 60000
+
+# Type of job: "full-time", "part-time", "contract", "internship"
+job_type: "full-time"
+
+# Country code for search (e.g., "USA", "UK", "Canada")
+country: "USA"
+
+# Number of results to fetch per job board (LinkedIn, Indeed, ZipRecruiter, Glassdoor)
+results_per_site: 50
+
+# Only fetch jobs posted within the last N hours
+hours_old: 24
+
+# Companies you want to completely exclude from the search
+blacklisted_companies:
+  - "CyberCoders"
+  - "Revature"
+
+# Time to run the automation daily (in 24-hour format HH:MM)
+schedule_time: "09:00"
+
+# Notification settings
+notifications:
+  email_enabled: true
+  telegram_enabled: false
+
+# AI Scoring settings (Phase 3 feature)
+ai_scoring:
+  enabled: true
+  min_score_threshold: 70

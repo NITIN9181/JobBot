@@ -1,0 +1,11 @@
+python-jobspy
+pandas
+pyyaml
+python-dotenv
+schedule
+requests
+groq
+gspread
+oauth2client
+python-telegram-bot
+secure-smtplib
