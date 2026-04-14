@@ -30,6 +30,7 @@ from modules.exporter import (
 from modules.scheduler import log_run, run_once_now, start_scheduler
 from modules.notifier import send_notifications, send_email_digest, send_telegram_message
 from modules.scorer import score_all_jobs, score_jobs_batch
+from modules.verifier import verify_all_jobs, get_verification_summary
 
 # Initialize centralized logging
 logger = setup_logging()
@@ -52,12 +53,12 @@ signal.signal(signal.SIGTERM, signal_handler)
 def print_banner():
     """Prints the startup banner."""
     banner = r"""
-    ██╗ ██████╗ ██████╗ ██████╗  ██████╗ ████████╗
-    ██║██╔═══██╗██╔══██╗██╔══██╗██╔═══██╗╚══██╔══╝
-    ██║██║   ██║██████╔╝██████╔╝██║   ██║   ██║   
-    ██║██║   ██║██╔══██╗██╔══██╗██║   ██║   ██║   
-    ██║╚██████╔╝██████╔╝██████╔╝╚██████╔╝   ██║   
-    ╚═╝ ╚═════╝ ╚═════╝ ╚═════╝  ╚═════╝    ╚═╝   
+      ██╗ ██████╗ ██████╗ ██████╗  ██████╗ ████████╗
+      ██║██╔═══██╗██╔══██╗██╔══██╗██╔═══██╗╚══██╔══╝
+  ██╗ ██║██║   ██║██████╔╝██████╔╝██║   ██║   ██║   
+  ██║ ██║██║   ██║██╔══██╗██╔══██╗██║   ██║   ██║   
+  ╚█████╔╝╚██████╔╝██████╔╝██████╔╝╚██████╔╝   ██║   
+   ╚════╝  ╚═════╝ ╚═════╝ ╚═════╝  ╚═════╝    ╚═╝   
     """
     print(banner)
     print("       Remote Job Search Automation")
@@ -193,6 +194,24 @@ def run_job_search(test_mode: bool = False):
         filtered_jobs = remove_duplicates(filtered_jobs)
         logger.info(f"Filtered down to {len(filtered_jobs)} matching jobs")
 
+        # Step 3.1 — AI Verification
+        v_stats = None
+        run_verify = config.get("verification", {}).get("enabled", True)
+        
+        if "--no-verify" in sys.argv:
+            run_verify = False
+            logger.info("AI verification disabled via override flag")
+
+        if run_verify and not os.getenv("NVIDIA_API_KEY"):
+            logger.warning("AI verification enabled but NVIDIA_API_KEY missing. Skipping...")
+            run_verify = False
+
+        if run_verify and not filtered_jobs.empty:
+            logger.info("Step 3.1: Starting AI Verification Pipeline")
+            filtered_jobs, v_stats = verify_all_jobs(filtered_jobs, config)
+            print(f"\n{get_verification_summary(v_stats)}")
+            logger.info(f"Verification complete. {len(filtered_jobs)} jobs remaining.")
+
         # Step 4 — Deduplicate Against History
         new_jobs = deduplicate_with_history(filtered_jobs)
         logger.info(f"{len(new_jobs)} new jobs (not seen before)")
@@ -258,7 +277,7 @@ def run_job_search(test_mode: bool = False):
         log_run("success", len(raw_jobs), len(new_jobs))
         
         if not new_jobs.empty:
-            summary_box = generate_run_summary(len(raw_jobs), len(filtered_jobs), len(new_jobs), elapsed, ai_stats, gs_status)
+            summary_box = generate_run_summary(len(raw_jobs), len(filtered_jobs), len(new_jobs), elapsed, ai_stats, gs_status, v_stats)
             print(f"\n{summary_box}")
             print(notif_summary)
         
@@ -279,8 +298,10 @@ def main():
     parser.add_argument("--test-email", action="store_true", help="Send a test notification email")
     parser.add_argument("--test-telegram", action="store_true", help="Send a test Telegram message")
     parser.add_argument("--no-ai", action="store_true", help="Skip AI scoring")
+    parser.add_argument("--no-verify", action="store_true", help="Skip AI verification")
     parser.add_argument("--batch-ai", action="store_true", help="Use batch scoring mode")
     parser.add_argument("--rescore", action="store_true", help="Clear score cache and re-score")
+    parser.add_argument("--reverify", action="store_true", help="Clear verification cache")
     parser.add_argument("--stats", action="store_true", help="Show application stats from Sheets")
     
     args = parser.parse_args()
@@ -292,7 +313,16 @@ def main():
                 os.remove(cache_path)
                 print("✅ Score cache cleared.")
             except Exception as e:
-                print(f"❌ Failed to clear cache: {e}")
+                print(f"❌ Failed to clear score cache: {e}")
+                
+    if args.reverify:
+        cache_path = "output/verify_cache.json"
+        if os.path.exists(cache_path):
+            try:
+                os.remove(cache_path)
+                print("✅ Verification cache cleared.")
+            except Exception as e:
+                print(f"❌ Failed to clear verification cache: {e}")
     
     print_banner()
     

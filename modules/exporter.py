@@ -214,7 +214,13 @@ def export_to_csv(df: pd.DataFrame, output_dir: str = "output") -> str:
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     filepath = os.path.join(output_dir, f"jobs_{timestamp}.csv")
     
-    cols = ["title", "company", "location", "job_url", "job_type", "min_amount", "max_amount", "currency", "date_posted", "description", "source_board", "matched_skills", "ai_match_score", "ai_match_reason"]
+    cols = [
+        "title", "company", "location", "job_url", "job_type", 
+        "min_amount", "max_amount", "currency", "date_posted", "description", 
+        "source_board", "matched_skills", "ai_match_score", "ai_match_reason",
+        "verified", "verification_confidence", "legitimacy_status", 
+        "india_verified", "fresher_verified", "verification_notes"
+    ]
     existing_cols = [c for c in cols if c in df.columns]
     
     try:
@@ -255,7 +261,7 @@ def display_terminal_summary(df: pd.DataFrame, top_n: int = 5):
         score = f"{int(row.get(sort_col, 0))}%" if is_scored else "N/A"
         print(f"[{i}] {score} - {row['title']} @ {row['company']}")
 
-def generate_run_summary(scraped: int, matched: int, new: int, time_sec: float, ai_stats: dict = None, gs_status: dict = None) -> str:
+def generate_run_summary(scraped: int, matched: int, new: int, time_sec: float, ai_stats: dict = None, gs_status: dict = None, v_stats: dict = None) -> str:
     """Generates a text summary of the run."""
     summary = f"""
 ---------------------------------------
@@ -264,8 +270,13 @@ JobBot Run Results
 Scraped: {scraped} | Matched: {matched} | New: {new}
 Time:    {time_sec:.1f}s
 """
+    if v_stats:
+        status = "OK" if v_stats.get("rejected", 0) == 0 else "FLT"
+        summary += f"Verify:  [{status}] Legitimate: {v_stats.get('legitimate', 0)}/{v_stats.get('total_verified', 0)} | Rejected: {v_stats.get('rejected', 0)}\n"
+        
     if ai_stats:
         summary += f"AI Match: Top Score {ai_stats.get('top_score', 0)}% ({ai_stats.get('top_job', 'N/A')})\n"
+        
     if gs_status:
         summary += f"Sheets:  {'[OK]' if gs_status.get('success') else '[FAIL]'} {gs_status.get('count', 0)} added\n"
     
