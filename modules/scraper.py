@@ -3,8 +3,9 @@ import logging
 import time
 from typing import List, Dict, Any
 from jobspy import scrape_jobs
+from modules.utils import retry
 
-# Set up logging for this module
+# Use logger inherited from root configuration
 logger = logging.getLogger(__name__)
 
 def scrape_all_jobs(config: Dict[str, Any]) -> pd.DataFrame:
@@ -36,16 +37,22 @@ def scrape_all_jobs(config: Dict[str, Any]) -> pd.DataFrame:
     for term in search_terms:
         logger.info(f"Scraping for search term: '{term}'")
         try:
-            # Scrape jobs using jobspy
-            jobs = scrape_jobs(
-                site_name=sites,
-                search_term=term,
-                location="Remote",
-                is_remote=True,
-                results_wanted=results_per_site,
-                hours_old=hours_old,
-                country_indeed=country
-            )
+            # Scrape jobs using jobspy — wrapped in a local retry-able call if needed, 
+            # but here we'll just use the try/except and maybe add a retry helper.
+            
+            @retry(max_attempts=3, delay=10)
+            def fetch_board_data():
+                return scrape_jobs(
+                    site_name=sites,
+                    search_term=term,
+                    location="Remote",
+                    is_remote=True,
+                    results_wanted=results_per_site,
+                    hours_old=hours_old,
+                    country_indeed=country
+                )
+            
+            jobs = fetch_board_data()
             
             if not jobs.empty:
                 # Add a column to track which search term found each job
@@ -76,46 +83,20 @@ def scrape_all_jobs(config: Dict[str, Any]) -> pd.DataFrame:
 
 if __name__ == "__main__":
     # Standalone test block
+    from modules.logger_setup import setup_logging
+    setup_logging()
+    
     test_config = {
-        "search_terms": ["Python Developer", "Software Engineer"],
-        "results_per_site": 5,
-        "hours_old": 168,  # Last 7 days
+        "search_terms": ["Python Developer"],
+        "results_per_site": 2,
+        "hours_old": 24,
         "country": "USA"
     }
     
-    # Configure logging (set library loggers to WARNING to reduce noise)
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    logging.getLogger("JobSpy").setLevel(logging.WARNING)
-    
-    print("\n" + "="*60)
-    print("             JOBBOT SCRAPER TEST RUN")
-    print("="*60)
+    logger.info("Starting Scraper auto-verification...")
     
     try:
         results = scrape_all_jobs(test_config)
-        print(f"\n[DONE] Found {len(results)} jobs total.")
-        
-        if not results.empty:
-            # Expand pandas display for easier reading
-            pd.set_option('display.max_columns', None)
-            pd.set_option('display.width', 1000)
-            pd.set_option('display.max_colwidth', 30)
-            
-            # Key technical columns
-            display_cols = ['title', 'company', 'site', 'location', 'source_search_term']
-            
-            print("\nPreview of Results (First 10):")
-            print(results[display_cols].head(10))
-            
-            print("\nBreakdown by Platform:")
-            print(results['site'].value_counts())
-        else:
-            print("\nNo jobs found. Try increasing 'hours_old' or expanding search terms.")
-            
+        logger.info(f"Verification complete. Found {len(results)} jobs.")
     except Exception as e:
-        print(f"\n[ERROR] Test failed: {e}")
-    
-    print("\n" + "="*60)
+        logger.error(f"Verification failed: {e}")

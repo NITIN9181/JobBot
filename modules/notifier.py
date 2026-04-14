@@ -8,9 +8,9 @@ from email.mime.text import MIMEText
 from typing import Dict, Any, Optional
 import pandas as pd
 import requests
+from modules.utils import retry
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Use logger inherited from root configuration
 logger = logging.getLogger(__name__)
 
 def format_salary(min_amt: Any, max_amt: Any, currency: Optional[str] = "USD") -> str:
@@ -62,7 +62,7 @@ def send_email_digest(jobs: pd.DataFrame, config: Dict[str, Any]):
     gmail_app_password = os.getenv("GMAIL_APP_PASSWORD")
     
     if not gmail_address or not gmail_app_password:
-        logger.warning("Email credentials missing (GMAIL_ADDRESS/GMAIL_APP_PASSWORD). Skipping email digest.")
+        logger.warning("Email credentials missing (GMAIL_ADDRESS/GMAIL_APP_PASSWORD). Skipping email.")
         return False
 
     if jobs.empty:
@@ -104,10 +104,6 @@ def send_email_digest(jobs: pd.DataFrame, config: Dict[str, Any]):
             .score-medium {{ background-color: #fff8e1; color: #b78103; padding: 4px 8px; border-radius: 4px; font-weight: bold; }}
             .score-low {{ color: #666; }}
             .footer {{ text-align: center; margin-top: 30px; font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 20px; }}
-            @media screen and (max-width: 600px) {{
-                .stats {{ flex-direction: column; }}
-                th:nth-child(4), td:nth-child(4) {{ display: none; }} /* Hide skills on mobile */
-            }}
         </style>
     </head>
     <body>
@@ -116,28 +112,12 @@ def send_email_digest(jobs: pd.DataFrame, config: Dict[str, Any]):
                 <h1 style="margin:0;">Your Daily Job Matches</h1>
                 <p style="margin:10px 0 0 0; opacity: 0.9;">Hand-picked opportunities for {date_str}</p>
             </div>
-            
             <div class="stats">
-                <div class="stat-item">
-                    <div class="stat-value">{len(jobs)}</div>
-                    <div class="stat-label">Total Found</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value">{count}</div>
-                    <div class="stat-label">Top Matches Sent</div>
-                </div>
+                <div class="stat-item"><div class="stat-value">{len(jobs)}</div><div class="stat-label">Total Found</div></div>
+                <div class="stat-item"><div class="stat-value">{count}</div><div class="stat-label">Top Matches</div></div>
             </div>
-
             <table>
-                <thead>
-                    <tr>
-                        <th>Job Title</th>
-                        <th>Company</th>
-                        <th>Salary</th>
-                        <th>Skills</th>
-                        <th>AI Match Score</th>
-                    </tr>
-                </thead>
+                <thead><tr><th>Job Title</th><th>Company</th><th>Salary</th><th>Skills</th><th>Match</th></tr></thead>
                 <tbody>
     """
 
@@ -145,37 +125,19 @@ def send_email_digest(jobs: pd.DataFrame, config: Dict[str, Any]):
         title = job.get('title', 'Unknown Title')
         url = job.get('job_url', '#')
         company = job.get('company', 'Unknown Company')
+        salary_str = format_salary(job.get('min_amount'), job.get('max_amount'), job.get('currency', 'USD'))
         
-        # Format salary
-        sal_min = job.get('min_amount')
-        sal_max = job.get('max_amount')
-        currency = job.get('currency', 'USD')
-        salary_str = format_salary(sal_min, sal_max, currency)
-        
-        # Skills
         skills = job.get('matched_skills', [])
-        if isinstance(skills, list):
-            skills_str = ", ".join(skills)
-        else:
-            skills_str = str(skills)
+        skills_str = ", ".join(skills) if isinstance(skills, list) else str(skills)
             
-        # AI Score logic
         score = job.get('ai_match_score', 0)
         reason = job.get('ai_match_reason', '')
-        score_class = "score-low"
-        if score > 80:
-            score_class = "score-high"
-        elif score >= 60:
-            score_class = "score-medium"
-        
+        score_class = "score-high" if score > 80 else ("score-medium" if score >= 60 else "score-low")
         score_display = f"{int(score)}%" if score > 0 else "N/A"
 
         html_content += f"""
                     <tr>
-                        <td>
-                            <a href="{url}" class="job-title">{title}</a><br>
-                            <span style="font-size: 11px; color: #666; font-style: italic;">{reason}</span>
-                        </td>
+                        <td><a href="{url}" class="job-title">{title}</a><br><span style="font-size: 11px; color: #666;">{reason}</span></td>
                         <td><div class="company">{company}</div></td>
                         <td><div class="salary">{salary_str}</div></td>
                         <td><div class="skills">{skills_str}</div></td>
@@ -183,54 +145,32 @@ def send_email_digest(jobs: pd.DataFrame, config: Dict[str, Any]):
                     </tr>
         """
 
-    html_content += f"""
+    html_content += """
                 </tbody>
             </table>
-            
-            <div class="footer">
-                <p>Generated by <strong>JobBot</strong> — <a href="https://github.com/yourname/jobbot" style="color:#999;">github.com/yourname/jobbot</a></p>
-                <p>You are receiving this because you configured JobBot notifications.</p>
-            </div>
+            <div class="footer"><p>Generated by <strong>JobBot</strong></p></div>
         </div>
     </body>
     </html>
     """
+    msg.attach(MIMEText(html_content, 'html'))
 
-    part1 = MIMEText(html_content, 'html')
-    msg.attach(part1)
+    @retry(max_attempts=3, delay=10)
+    def attempt_smtp_send():
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(gmail_address, gmail_app_password)
+            server.send_message(msg)
 
-    # SMTP Send with Retry logic
-    max_retries = 1
-    for attempt in range(max_retries + 1):
-        try:
-            logger.info(f"Connecting to SMTP server (Attempt {attempt + 1})...")
-            with smtplib.SMTP("smtp.gmail.com", 587) as server:
-                server.starttls()
-                server.login(gmail_address, gmail_app_password)
-                server.send_message(msg)
-                logger.info(f"Email digest sent successfully to {gmail_address}")
-                return True # Success
-        except Exception as e:
-            logger.error(f"Failed to send email on attempt {attempt + 1}: {str(e)}")
-            if attempt < max_retries:
-                logger.info("Retrying in 30 seconds...")
-                time.sleep(30)
-            else:
-                logger.error("All email send attempts failed.")
-                return False
+    try:
+        attempt_smtp_send()
+        logger.info(f"Email digest sent successfully to {gmail_address}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send email after retries: {str(e)}")
+        return False
 
 def send_telegram_message(text: str, token: str, chat_id: str) -> bool:
-    """
-    Generic function to send any text via Telegram Bot API.
-    Returns True if sent successfully, False otherwise.
-    
-    Telegram Setup Instructions:
-    1. Create Bot: Message @BotFather on Telegram, use /newbot, and get the BOT_TOKEN.
-    2. Get Chat ID: 
-       - Start a chat with your bot and send a message.
-       - Visit: https://api.telegram.org/bot<TOKEN>/getUpdates
-       - Find "id" inside the "chat" object.
-    """
+    """Sends a message via Telegram Bot API with retry logic."""
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {
         "chat_id": chat_id,
@@ -238,182 +178,64 @@ def send_telegram_message(text: str, token: str, chat_id: str) -> bool:
         "parse_mode": "Markdown"
     }
     
-    max_retries = 1
-    for attempt in range(max_retries + 1):
-        try:
-            response = requests.post(url, json=payload, timeout=10)
-            if response.status_code == 200:
-                logger.info("Telegram message sent successfully.")
-                return True
-            else:
-                logger.error(f"Telegram API error ({response.status_code}): {response.text}")
-        except Exception as e:
-            logger.error(f"Telegram connection failed (Attempt {attempt+1}): {str(e)}")
-        
-        if attempt < max_retries:
-            logger.info("Retrying Telegram in 10 seconds...")
-            time.sleep(10)
-            
-    return False
+    @retry(max_attempts=3, delay=5)
+    def post_tg():
+        res = requests.post(url, json=payload, timeout=15)
+        if res.status_code != 200:
+            logger.error(f"Telegram API error ({res.status_code}): {res.text}")
+            res.raise_for_status()
+        return res
+
+    try:
+        post_tg()
+        logger.info("Telegram message sent successfully.")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send Telegram message after retries: {str(e)}")
+        return False
 
 def send_telegram_alert(jobs: pd.DataFrame, config: Dict[str, Any]):
-    """
-    Sends a Telegram alert with the top matched jobs.
-    Splits message if it exceeds 4096 characters.
-    """
+    """Sends a Telegram alert with the top matched jobs."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     
     if not token or not chat_id:
-        logger.warning("Telegram credentials missing (TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID). Skipping Telegram alert.")
+        logger.warning("Telegram credentials missing. Skipping Telegram alert.")
         return False
 
     if jobs.empty:
-        logger.info("No jobs to send via Telegram. Skipping.")
         return False
 
-    # Prepare header
     date_str = datetime.now().strftime("%Y-%m-%d")
-    header = (
-        f"🤖 *JobBot Daily Report*\n"
-        f"📅 Date: {date_str}\n"
-        f"📊 New Jobs Found: {len(jobs)}\n\n"
-        f"━━━━━━━━━━━━━━━━━━━\n\n"
-    )
+    header = f"🤖 *JobBot Daily Report* — {date_str}\n\n"
     
-    # Take top 10 jobs
-    top_jobs = jobs.head(10)
     job_blocks = []
-    
-    for idx, (_, job) in enumerate(top_jobs.iterrows(), 1):
-        title = job.get('title', 'Unknown Title')
-        company = job.get('company', 'Unknown Company')
+    for idx, (_, job) in enumerate(jobs.head(10).iterrows(), 1):
+        title = job.get('title', 'Unknown')
+        company = job.get('company', 'Unknown')
         url = job.get('job_url', '#')
-        
-        sal_min = job.get('min_amount')
-        sal_max = job.get('max_amount')
-        currency = job.get('currency', 'USD')
-        salary_str = format_salary(sal_min, sal_max, currency)
-        
-        skills = job.get('matched_skills', [])
-        skills_str = ", ".join(skills) if isinstance(skills, list) else str(skills)
-        
         score = job.get('ai_match_score', 0)
-        reason = job.get('ai_match_reason', '')
-        
-        block = (
-            f"{idx}️⃣ *{title}* — 🎯 {int(score)}%\n"
-            f"🏢 {company}\n"
-            f"💰 {salary_str}\n"
-            f"🔗 [Apply Here]({url})\n"
-            f"💡 _{reason}_\n\n"
-        )
+        block = f"{idx}️⃣ *{title}* ({int(score)}%)\n🏢 {company}\n🔗 [Apply Here]({url})\n\n"
         job_blocks.append(block)
 
-    footer = "━━━━━━━━━━━━━━━━━━━\n📋 Full list exported to CSV"
-    
-    # Construct message and handle length limits
-    full_message = header + "".join(job_blocks) + footer
-    
-    # Split message if > 4096 chars
-    if len(full_message) <= 4096:
-        return send_telegram_message(full_message, token, chat_id)
-    else:
-        # Simple splitting
-        parts = []
-        current_part = header
-        for block in job_blocks:
-            if len(current_part) + len(block) > 4000: # Leave some buffer
-                parts.append(current_part)
-                current_part = ""
-            current_part += block
-        
-        current_part += footer
-        parts.append(current_part)
-        
-        success = True
-        for p in parts:
-            if not send_telegram_message(p, token, chat_id):
-                success = False
-        return success
+    full_message = header + "".join(job_blocks)
+    return send_telegram_message(full_message, token, chat_id)
 
 def send_notifications(jobs: pd.DataFrame, config: Dict[str, Any]):
     notif_config = config.get('notifications', {})
     email_enabled = notif_config.get('email_enabled', False)
     telegram_enabled = notif_config.get('telegram_enabled', False)
     
-    results = {
-        "email_enabled": email_enabled,
-        "telegram_enabled": telegram_enabled,
-        "email_sent": False,
-        "telegram_sent": False
-    }
+    results = {"email_enabled": email_enabled, "telegram_enabled": telegram_enabled, "email_sent": False, "telegram_sent": False}
     
-    if not email_enabled and not telegram_enabled:
-        logger.info("No notifications configured (Email and Telegram are both disabled).")
-        return results
-
     if email_enabled:
         results["email_sent"] = send_email_digest(jobs, config)
-        
     if telegram_enabled:
         results["telegram_sent"] = send_telegram_alert(jobs, config)
         
     return results
 
 if __name__ == "__main__":
-    # Test block
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    print("Running standalone test for notifier.py...")
-    
-    # Create dummy data
-    test_jobs = pd.DataFrame([
-        {
-            'title': 'Senior Python Developer',
-            'company': 'Tech Corp',
-            'job_url': 'https://example.com/job1',
-            'min_amount': 120000,
-            'max_amount': 150000,
-            'currency': 'USD',
-            'matched_skills': ['python', 'django', 'aws'],
-            'ai_score': 85
-        },
-        {
-            'title': 'Backend Engineer',
-            'company': 'Startup Inc',
-            'job_url': 'https://example.com/job2',
-            'min_amount': 90000,
-            'max_amount': 110000,
-            'currency': 'USD',
-            'matched_skills': ['python', 'fastapi', 'postgresql'],
-            'ai_score': 72
-        },
-        {
-            'title': 'Junior Dev',
-            'company': 'Old School Co',
-            'job_url': 'https://example.com/job3',
-            'min_amount': None,
-            'max_amount': None,
-            'currency': 'USD',
-            'matched_skills': ['python'],
-            'ai_score': 45
-        }
-    ])
-    
-    test_config = {
-        'notifications': {
-            'email_enabled': True,
-            'telegram_enabled': True
-        }
-    }
-    
-    # Test format_salary
-    print(f"Salary test 1: {format_salary(80000, 120000, 'USD')}")
-    print(f"Salary test 2: {format_salary(None, None, 'USD')}")
-    
-    # Test unified notification function
-    # Note: Requires .env to have credentials to actually send
-    print("Testing unified notifications (will attempt Email and Telegram)...")
-    send_notifications(test_jobs, test_config)
+    from modules.logger_setup import setup_logging
+    setup_logging()
+    logger.info("Notifier test session.")

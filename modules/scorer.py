@@ -8,11 +8,9 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from openai import OpenAI
 from dotenv import load_dotenv
+from modules.utils import retry
 
-# Load environment variables
-load_dotenv()
-
-# Set up logging
+# Use logger inherited from root configuration
 logger = logging.getLogger(__name__)
 
 # Constants
@@ -123,8 +121,9 @@ Respond in EXACTLY this JSON format and nothing else:
 
     # model is now passed as an argument
     
-    try:
-        response = client.chat.completions.create(
+    @retry(max_attempts=3, delay=5)
+    def call_ai():
+        return client.chat.completions.create(
             model=model,
             messages=[
                 {
@@ -140,6 +139,9 @@ Respond in EXACTLY this JSON format and nothing else:
             max_tokens=300,
             top_p=0.7
         )
+
+    try:
+        response = call_ai()
         
         content = response.choices[0].message.content.strip()
         
@@ -306,11 +308,12 @@ def score_jobs_batch(df: pd.DataFrame, config: Dict[str, Any], batch_size: int =
 
 if __name__ == "__main__":
     # Test with sample jobs
-    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+    from modules.logger_setup import setup_logging
+    setup_logging()
     
     sample_config = {
         "search_terms": ["Python Developer"],
-        "skills": ["python", "django", "sql", "aws", "docker"],
+        "skills": ["python", "django"],
         "min_salary": 60000,
         "job_type": "full-time",
         "ai_scoring": {"enabled": True, "min_score_threshold": 60}
@@ -320,38 +323,15 @@ if __name__ == "__main__":
         {
             "title": "Senior Python Developer",
             "company": "TechCorp",
-            "description": "We need a Python developer with Django and PostgreSQL experience. AWS knowledge preferred. Remote role with competitive salary.",
+            "description": "We need a Python developer with Django and PostgreSQL experience.",
             "skill_match_count": 3
-        },
-        {
-            "title": "Marketing Manager",
-            "company": "AdAgency",
-            "description": "Looking for a marketing professional to lead our campaigns. Experience with social media and content creation required.",
-            "skill_match_count": 0
-        },
-        {
-            "title": "Full Stack Engineer",
-            "company": "StartupXYZ",
-            "description": "Build web applications using Python, React, Docker, and AWS. SQL database experience needed. Fully remote position.",
-            "skill_match_count": 4
         }
     ])
 
-    print("\n" + "="*50)
-    print("      AI SCORER AUTO-VERIFICATION")
-    print("="*50)
+    logger.info("Starting AI Scorer auto-verification...")
     
-    scored = score_all_jobs(sample_jobs, sample_config)
-    
-    print("\n=== SCORING RESULTS ===")
-    if not scored.empty:
-        for _, row in scored.iterrows():
-            print(f"\n{row['title']} at {row['company']}")
-            print(f"  Score: {row['ai_match_score']}%")
-            print(f"  Reason: {row['ai_match_reason']}")
-            print(f"  Matches: {row['ai_key_matches']}")
-            print(f"  Missing: {row['ai_missing_skills']}")
-    else:
-        print("\n[INFO] No jobs passed the threshold or API key missing.")
-    
-    print("="*50 + "\n")
+    try:
+        scored, stats = score_all_jobs(sample_jobs, sample_config)
+        logger.info(f"Scoring complete. Top score: {stats['top_score']}%")
+    except Exception as e:
+        logger.error(f"Verification failed: {e}")

@@ -6,19 +6,11 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Callable
 
-# Set up logging for the module
-logger = logging.getLogger("JobBot.Scheduler")
+# Use logger inherited from root configuration
+logger = logging.getLogger(__name__)
 
 def get_next_run_time(run_time: str) -> str:
-    """
-    Calculates the time until the next scheduled run and returns a human-readable string.
-    
-    Args:
-        run_time: Time in "HH:MM" 24-hour format.
-        
-    Returns:
-        Human-readable next run description.
-    """
+    """Calculates the time until the next scheduled run."""
     now = datetime.now()
     try:
         scheduled_time = datetime.strptime(run_time, "%H:%M").replace(
@@ -26,7 +18,7 @@ def get_next_run_time(run_time: str) -> str:
         )
     except ValueError:
         logger.error(f"Invalid run_time format: {run_time}. Expected HH:MM.")
-        return "Invalid run time format"
+        return "Invalid run time"
 
     if scheduled_time <= now:
         scheduled_time += timedelta(days=1)
@@ -36,129 +28,62 @@ def get_next_run_time(run_time: str) -> str:
     minutes, _ = divmod(remainder, 60)
 
     time_str = scheduled_time.strftime("%I:%M %p")
-    return f"Next run in {hours} hours {minutes} minutes (at {time_str})"
+    return f"Next run in {hours}h {minutes}m (at {time_str})"
 
 def log_run(status: str, jobs_found: int, jobs_matched: int, error_message: str = "", log_file: str = "logs/run_log.csv"):
-    """
-    Appends a summary of the job run to a CSV log file.
-    
-    Args:
-        status: "success" or "failure".
-        jobs_found: Total jobs scraped.
-        jobs_matched: Total jobs matching filters.
-        error_message: Error description if status is failure.
-        log_file: Path to the log CSV.
-    """
-    # Create logs directory if it doesn't exist
-    log_dir = os.path.dirname(log_file)
-    if log_dir and not os.path.exists(log_dir):
-        os.makedirs(log_dir, exist_ok=True)
-    
-    run_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """Appends a summary of the job run to a CSV log file."""
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
     
     data = {
-        "run_timestamp": [run_timestamp],
+        "timestamp": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
         "status": [status],
-        "jobs_scraped": [jobs_found],
-        "jobs_matched": [jobs_matched],
-        "error_message": [error_message]
+        "found": [jobs_found],
+        "matched": [jobs_matched],
+        "error": [error_message]
     }
     df = pd.DataFrame(data)
-    
     file_exists = os.path.isfile(log_file)
     df.to_csv(log_file, mode='a', index=False, header=not file_exists)
-    logger.info(f"Run logged to {log_file} with status: {status}")
+    logger.debug(f"Run summary appended to {log_file}")
 
 def run_once_now(job_function: Callable):
-    """
-    Executes the job function immediately and logs performance timing.
-    
-    Args:
-        job_function: The main job bot function to execute.
-    """
-    logger.info("Starting manual job run execution...")
-    print(f"\n{'-'*30}")
-    print(f"Starting Manual Run at {datetime.now().strftime('%H:%M:%S')}")
-    print(f"{'-'*30}")
-    
+    """Executes the job function immediately."""
+    logger.info("Executing immediate manual run...")
     start_time = datetime.now()
-    
     try:
         job_function()
         status = "success"
     except Exception as e:
-        logger.error(f"Error during manual run: {e}")
+        logger.error(f"Manual run failed: {e}")
         status = f"failure: {str(e)}"
     
-    end_time = datetime.now()
-    duration = end_time - start_time
-    
-    logger.info(f"Manual run finished. Status: {status}. Total execution time: {duration}")
-    print(f"{'-'*30}")
-    print(f"Run Finished. Duration: {duration}")
-    print(f"{'-'*30}\n")
+    duration = datetime.now() - start_time
+    logger.info(f"Manual run finished ({duration}). Status: {status}")
 
 def start_scheduler(job_function: Callable, run_time: str = "09:00"):
-    """
-    Schedules job_function to run daily at the specified time and enters a check loop.
-    
-    Args:
-        job_function: The main job bot function to execute.
-        run_time: Time in "HH:MM" 24-hour format.
-    """
+    """Starts the daily scheduler loop."""
     schedule.every().day.at(run_time).do(job_function)
     
-    logger.info(f"JobBot scheduled to run daily at {run_time}")
-    print(f"JobBot scheduled to run daily at {run_time}")
-    print(f"Next run info: {get_next_run_time(run_time)}")
-    print("Press Ctrl+C to stop the scheduler.")
+    next_info = get_next_run_time(run_time)
+    logger.info(f"Scheduler active. Running daily at {run_time}. {next_info}")
+    print(f"[*] Scheduler active. {next_info}")
     
     last_heartbeat = datetime.now()
-    
     try:
         while True:
             schedule.run_pending()
             
-            # Use heartbeat logic (every 30 mins)
+            # Heartbeat every 1 hour
             now = datetime.now()
-            if now - last_heartbeat >= timedelta(minutes=30):
-                next_run_info = get_next_run_time(run_time)
-                msg = f"JobBot is running... {next_run_info}"
-                logger.info(msg)
-                print(msg)
+            if now - last_heartbeat >= timedelta(hours=1):
+                logger.info(f"Heartbeat: {get_next_run_time(run_time)}")
                 last_heartbeat = now
                 
-            time.sleep(60) # Check every 60 seconds
+            time.sleep(30)
     except KeyboardInterrupt:
-        logger.info("Shutting down JobBot scheduler...")
-        print("\nShutting down JobBot scheduler...")
+        logger.info("Scheduler stopped by user.")
 
 if __name__ == "__main__":
-    # Test Block: Automatic Verification
-    print("Running automatic verification for scheduler.py module...")
-    
-    # 1. Test get_next_run_time
-    print(f"Test get_next_run_time('23:59'): {get_next_run_time('23:59')}")
-    
-    # 2. Test log_run
-    test_log = "logs/test_run_log.csv"
-    if os.path.exists(test_log):
-        os.remove(test_log)
-    
-    log_run("success", 10, 5, log_file=test_log)
-    if os.path.exists(test_log):
-        print(f"SUCCESS: {test_log} created.")
-        df = pd.read_csv(test_log)
-        print(f"Log content:\n{df}")
-    else:
-        print(f"FAILURE: {test_log} not created.")
-    
-    # 3. Test run_once_now
-    def dummy_job():
-        print("Executing dummy job...")
-        time.sleep(1)
-        print("Dummy job complete.")
-        
-    run_once_now(dummy_job)
-    
-    print("\nVerification complete.")
+    from modules.logger_setup import setup_logging
+    setup_logging()
+    logger.info("Scheduler test session.")
