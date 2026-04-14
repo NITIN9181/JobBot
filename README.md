@@ -93,6 +93,39 @@
 
 ---
 
+### ☁️ 24/7 Automation (GitHub Actions)
+
+You can run JobBot automatically every day for free using GitHub Actions.
+
+#### 1. Fork the Repository
+Click the **Fork** button at the top right of this page to create your own copy of JobBot.
+
+#### 2. Configure GitHub Secrets
+Go to your forked repository's **Settings > Secrets and variables > Actions** and click **New repository secret**. Add the following:
+
+| Secret Name | Description |
+| :--- | :--- |
+| `NVIDIA_API_KEY` | Your Nvidia/Groq API key. |
+| `GMAIL_ADDRESS` | Your Gmail address. |
+| `GMAIL_APP_PASSWORD` | The 16-character App Password. |
+| `TELEGRAM_BOT_TOKEN` | Your Telegram Bot Token. |
+| `TELEGRAM_CHAT_ID` | Your Telegram Chat ID. |
+| `GOOGLE_SHEET_NAME` | The exact name of your Google Sheet. |
+| `GOOGLE_SHEETS_CRED_FILE_B64` | The contents of your `credentials.json` (base64 encoded). |
+
+> [!TIP]
+> **How to encode your credentials to Base64?**
+> - **Windows (PowerShell)**: `[Convert]::ToBase64String([IO.File]::ReadAllBytes('credentials.json'))`
+> - **Linux/macOS**: `base64 -i credentials.json` (then copy the output).
+
+#### 3. Enable the Workflow
+1.  Go to the **Actions** tab in your GitHub repository.
+2.  Select **JobBot Automation** from the left sidebar.
+3.  Click **Enable workflow**.
+4.  (Optional) Click **Run workflow > Run workflow** to test it immediately!
+
+---
+
 ### 🏗️ Architecture
 
 ```text
@@ -116,7 +149,7 @@
 A: Yes. JobBot uses public-facing web data via the `jobspy` library. However, always respect the Terms of Service of individual job boards. Use the `hours_old` and `results_per_site` filters to keep your request volume reasonable.
 
 **Q: How do I run this 24/7 for free?**
-A: We've included a GitHub Actions workflow in `.github/workflows/jobbot_daily.yml`. You can fork this repo and set your env vars as "Secrets" to have GitHub run the search for you every morning at 9:00 AM.
+A: We've included a GitHub Actions workflow in `.github/workflows/jobbot.yml`. Follow the **24/7 Automation** section above to set up your secrets and schedule daily runs.
 
 **Q: Can I use different AI models?**
 A: Absolutely. Check `config.yaml` under `ai_scoring.model`. You can swap to any model supported by the NVIDIA or OpenAI-compatible endpoints.
