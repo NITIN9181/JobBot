@@ -24,6 +24,8 @@ def validate_config(config: Dict[str, Any]):
         ("country", str, "Set country to a country code like 'USA' or 'UK'"),
         ("results_per_site", int, "Set results_per_site to a number like 50"),
         ("hours_old", int, "Set hours_old to a number like 24"),
+        ("target_country", str, "Set target_country to 'India' or 'any'"),
+        ("experience", dict, "Set experience to a dictionary with 'level' and 'max_years'"),
     ]
     
     for key, expected_type, fix in rules:

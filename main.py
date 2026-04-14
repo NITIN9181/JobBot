@@ -18,6 +18,7 @@ if sys.platform == "win32":
 from modules.logger_setup import setup_logging
 from config import get_config
 from modules.scraper import scrape_all_jobs
+from modules.india_filter import apply_india_fresher_filters
 from modules.filter_engine import filter_jobs, remove_duplicates
 from modules.deduplicator import deduplicate_with_history
 from modules.exporter import (
@@ -184,8 +185,11 @@ def run_job_search(test_mode: bool = False):
             log_run("success", 0, 0, "No jobs found during scrape")
             return
 
-        # Step 3 — Filter Jobs
-        filtered_jobs = filter_jobs(raw_jobs, config)
+        # Step 2.1 — India & Fresher Filtering
+        filtered_jobs = apply_india_fresher_filters(raw_jobs, config)
+        
+        # Step 3 — Generic Criteria Filtering
+        filtered_jobs = filter_jobs(filtered_jobs, config)
         filtered_jobs = remove_duplicates(filtered_jobs)
         logger.info(f"Filtered down to {len(filtered_jobs)} matching jobs")
 

@@ -52,6 +52,14 @@ country: "India"
 # Number of results to fetch per job board (LinkedIn, Indeed, ZipRecruiter, Glassdoor)
 results_per_site: 50
 
+# Target country for India-eligibility filter
+target_country: "India"
+
+# Experience level filter settings
+experience:
+  level: "fresher"  # fresher | junior | mid | senior | any
+  max_years: 1      # Maximum years of experience allowed for 'fresher' level
+
 # Only fetch jobs posted within the last N hours
 hours_old: 24
 
