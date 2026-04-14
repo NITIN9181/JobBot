@@ -12,6 +12,7 @@ from modules.deduplicator import deduplicate_with_history
 from modules.exporter import export_to_csv, export_latest_csv, display_terminal_summary, generate_run_summary
 from modules.scheduler import log_run, run_once_now, start_scheduler
 from modules.notifier import send_notifications, send_email_digest, send_telegram_message
+from modules.scorer import score_all_jobs
 
 # Set up logging
 logger = logging.getLogger("JobBot.Main")
@@ -60,6 +61,14 @@ def run_job_search(test_mode: bool = False):
         # Step 4 — Deduplicate Against History
         new_jobs = deduplicate_with_history(filtered_jobs)
         logger.info(f"{len(new_jobs)} new jobs (not seen before)")
+
+        # Step 4.1 — AI Scoring (Phase 3.1)
+        if not new_jobs.empty and config.get("ai_scoring", {}).get("enabled", False):
+            logger.info("Step 4.1: Starting AI Scoring...")
+            new_jobs = score_all_jobs(new_jobs, config)
+            logger.info(f"{len(new_jobs)} jobs remaining after AI scoring threshold")
+        elif not new_jobs.empty:
+            logger.info("AI Scoring is disabled in config. Skipping.")
 
         # Step 5 — Export Results
         if not new_jobs.empty:
