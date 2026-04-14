@@ -10,7 +10,11 @@ from config import get_config
 from modules.scraper import scrape_all_jobs
 from modules.filter_engine import filter_jobs, remove_duplicates
 from modules.deduplicator import deduplicate_with_history
-from modules.exporter import export_to_csv, export_latest_csv, display_terminal_summary, generate_run_summary
+from modules.exporter import (
+    export_to_csv, export_latest_csv, 
+    display_terminal_summary, generate_run_summary,
+    export_to_google_sheets
+)
 from modules.scheduler import log_run, run_once_now, start_scheduler
 from modules.notifier import send_notifications, send_email_digest, send_telegram_message
 from modules.scorer import score_all_jobs, score_jobs_batch
@@ -100,6 +104,7 @@ def run_job_search(test_mode: bool = False):
         if not new_jobs.empty:
             export_to_csv(new_jobs)
             export_latest_csv(new_jobs)
+            export_to_google_sheets(new_jobs, config)
             display_terminal_summary(new_jobs)
         else:
             logger.info("No new jobs to export.")
