@@ -92,7 +92,7 @@ def scrape_all_jobs(config: Dict[str, Any]) -> pd.DataFrame:
     logger.info("Scraping AI/ML/SDE jobs for country: %s", target_country)
 
     # Supported sites in python-jobspy — refined for stability
-    sites = ["indeed", "linkedin", "google", "zip_recruiter", "glassdoor"]
+    sites = ["indeed", "linkedin", "google"]
 
     all_results: List[pd.DataFrame] = []
 

@@ -544,8 +544,6 @@ def main():
         print("  Indeed:         [OK] Enabled")
         print("  LinkedIn:       [OK] Enabled")
         print("  Google Jobs:    [OK] Enabled")
-        print("  ZipRecruiter:   [OK] Enabled")
-        print("  Glassdoor:      [OK] Enabled")
 
         ext = config.get("extended_sources", {})
         status = lambda k: "[OK] Enabled" if ext.get(k, False) else "[--] Disabled"
